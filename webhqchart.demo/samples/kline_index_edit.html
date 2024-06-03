@@ -6,9 +6,11 @@
 
 <title>仿通达信公式编辑器</title>  
     <!-- 加载资源 -->
-    <link rel="stylesheet" href="../jscommon/umychart.resource/css/tools.css" />
     <link rel="stylesheet" href="../jscommon/umychart.resource/font/iconfont.css" />
+    <link rel="stylesheet" href="../jscommon/umychart.resource/font/drawtool/iconfont.css" />
+    <link rel="stylesheet" href="../jscommon/umychart.resource/css/tools.css" />
     <link rel="stylesheet" href="../jscommon/umychart.resource/js/codemirror/codemirror.css" />
+
 </head>  
 <body>
     <div id="kline"></div>
@@ -25,6 +27,7 @@
             <label for="exclude_y">指标不参与Y轴计算</label>
 
             <button class="toolsButton" id="index_run">执行(切换指标)</button>
+            <button class="toolsButton" id="add_index_window">执行(新建窗口指标)</button>
             <button class="toolsButton" id="index_check">语法检测</button>
             <button class="toolsButton" id="index_save">保存指标</button>
 
@@ -107,7 +110,9 @@
     <script src="../jscommon/umychart.complier.js"></script>    <!-- 麦语言解析执行器 -->
     <script src="../jscommon/umychart.index.data.js"></script>  <!-- 基础指标库 -->
     <script src="../jscommon/umychart.style.js"></script>       <!-- 白色风格和黑色风格配置信息 -->
-
+    <script src="../jscommon/umychart.popMenu.js"></script>
+    <script src="../jscommon/umychart.DialogDrawTool.js"></script>
+    
      <!-- 公式编辑器 -->
     <script src="../jscommon/umychart.resource/js/codemirror/codemirror.js"></script>
     <script src="../jscommon/umychart.resource/js/codemirror/javascript.js"></script>
@@ -129,6 +134,8 @@
 
     <script src="../jscommon/umychart.testdata.js"></script>
 
+
+
     <script>
 
         MARKET_SUFFIX_NAME.GetMarketStatus = function (symbol)  { return 2; }
@@ -147,6 +154,9 @@
             this.IndexEdit;
 
             this.MapIndex=new Map();    //本地指标
+
+            this.JSPopMenu=new JSPopMenu();
+            this.JSPopMenu.Inital();
           
             //K线配置信息
             this.Option= {
@@ -159,7 +169,7 @@
                 [
                     //{Index:"EMPTY", TitleHeight:1},
                     {Index:"MA", Overlay:true },
-                    {Index:"AMO", Overlay:true},
+                    {Index:"MACD", Overlay:true},
                     {Index:"VOL", Overlay:true, YAxis: { FloatPrecision:0, StringFormat:2 } },
                 ], 
 
@@ -195,7 +205,7 @@
                 //Language:'EN',
 
                 Symbol:"600000.sh",
-                IsAutoUpdate:false,       //是自动更新数据
+                IsAutoUpdate:true,       //是自动更新数据
                 AutoUpdateFrequency:3000,   //数据更新频率
                 //TradeIndex: {Index:'交易系统-BIAS'},    //交易系统
 
@@ -207,6 +217,9 @@
                 //IsCorssOnlyDrawKLine:true,
 
                 CtrlMoveStep:10,
+                EnablePopMenuV2:true,
+                EnableDrawToolDialogV2:true,
+                EnableModifyDrawDialogV2:true,
 
                 //EnableVerifyRecvData:true,
 
@@ -215,7 +228,7 @@
 
                 DrawTool:       //画图工具
                 {
-                    //StorageKey:'4E7EA133-D6C8-4776-9869-1DDDCC5FA744'
+                    //StorageKey:'4E7EA133-D6C8-4776-9869-1DDDCC5FA788'
                 },
     
                 KLine:  //K线设置
@@ -284,7 +297,7 @@
                             { 
                                 Type:0,
                                
-                                Position:'right',LineType:1, 
+                                Position:'right', LineType:1, 
                                 //PositionEx:1,
                             },
                             
@@ -329,7 +342,7 @@
                         
                     },
 
-                    { SplitCount:5 },
+                    { SplitCount:5, BottomSpace:18 },
                     { SplitCount:4 }
                 ],
 
@@ -337,6 +350,7 @@
                 [
                     //{Name:'KLineTooltip' },  //手机端tooltip
                     //{Name:"FrameSplitPaint", LineColor:"rgb(200,0,0)" }
+                    //{Name:"SessionBreaksPaint"}
                 ],
 
 
@@ -351,7 +365,7 @@
             {
                 var self=this;
                 //$(window).resize(function() { self.OnSize( {Type:1} ); });    //绑定窗口大小变化事件
-                $(window).resize(function() { self.OnSize( ); });    //绑定窗口大小变化事件
+                $(window).resize(function() { self.OnSize(  ); });    //绑定窗口大小变化事件
 
                 var blackStyle=HQChartStyle.GetStyleConfig(STYLE_TYPE_ID.BLACK_ID); //读取黑色风格配置
                 JSChart.SetStyle(blackStyle);
@@ -371,8 +385,17 @@
                         callback:(event, data, obj)=>{ this.OnCreateFrame(event, data, obj); }
                     },
                     {
+                        event:JSCHART_EVENT_ID.ON_DELETE_FRAME,
+                        callback:(event, data, obj)=>{ this.OnDeleteFrame(event, data, obj); }
+
+                    },
+                    {
                         event:JSCHART_EVENT_ID.ON_SPLIT_YCOORDINATE, 
                         callback:(event, data, obj)=>{ this.OnSplitYCoordinate(event, data, obj); }
+                    },
+                    {
+                        event:JSCHART_EVENT_ID.ON_SPLIT_XCOORDINATE, 
+                        callback:(event, data, obj)=>{ this.OnSplitXCoordinate(event, data, obj); }
                     },
                     {
                         event:JSCHART_EVENT_ID.ON_CREATE_OVERLAY_FRAME, 
@@ -385,7 +408,33 @@
                     {
                         event:JSCHART_EVENT_ID.ON_TITLE_DRAW,
                         callback:(event, data, obj)=>{ this.OnTitleDraw(event, data, obj); }
+                    },
+                    {
+                        event:JSCHART_EVENT_ID.ON_CLICK_EXTENDCHART_BUTTON,
+                        callback:(event, data, obj)=>{ this.OnClickExtendChartButton(event, data, obj); }
+                    },
+                    {
+                        event:JSCHART_EVENT_ID.ON_CHANGE_INDEX,
+                        callback:(event, data, obj)=>{ this.OnChangeIndex(event, data, obj); }
+
+                    },
+                    {
+                        event:JSCHART_EVENT_ID.ON_CLICK_TITLE_BUTTON,
+                        callback:(event, data, obj)=>{ this.OnClickTitleButton(event, data, obj); }
+                    },
+                    {
+                        event:JSCHART_EVENT_ID.ON_CREATE_RIGHT_MENU,
+                        callback:(event, data, obj)=>{ this.OnCreateRightMenu(event, data, obj); }
+                    },
+                    {
+                        event:JSCHART_EVENT_ID.ON_MENU_COMMAND,
+                        callback:(event, data, obj)=>{ this.OnMenuCommand(event, data, obj); }
+                    },
+                    {
+                        event:JSCHART_EVENT_ID.ON_CLICK_CROSSCURSOR_RIGHT, 
+                        callback:(event, data, obj)=>{ this.ClickCrossCursor(event, data, obj); }
                     }
+
                 ];
 
                 this.OnSize();  //让K线全屏
@@ -393,6 +442,8 @@
                 this.Option.NetworkFilter=(data, callback)=>{ this.NetworkFilter(data, callback); }
                 this.Chart.SetOption(this.Option);  //设置K线配置
 
+
+                this.UpdateWindowsSelectDOM();
             }
 
             this.NetworkFilter=function(data, callback)
@@ -404,17 +455,47 @@
                     case 'JSSymbolData::GetSymbolData':                 //分时图数据对接
                         this.GetSymbolData(data, callback);
                         break;
+                    case "APIScriptIndex::ExecuteScript":
+                        this.GetAPIIndexData(data, callback);
+                        break;
                     default:
                         HQData.NetworkFilter(data, callback);
                         break;
                 }
             }
 
+            this.GetAPIIndexData=function(data, callback)
+            {
+                data.PreventDefault=true;
+                var request=data.Request;
+                if (request.Data.indexname=='CLOSE_LINE')
+                    this.GetAPIIndx_CLOSE_LINE(data, callback)
+            }
+
+            this.GetAPIIndx_CLOSE_LINE=function(data, callback)
+            {
+                var hqchart=data.HQChart;
+                var kData=hqchart.ChartPaint[0].Data;
+
+                var closeLine={ name:'价', type:0, data:kData.GetClose() };
+
+                var apiData=
+                {
+                    code:0, 
+                    stock:{ name:hqchart.Name, symbol:hqchart.Symbol }, 
+                    outdata: { date:kData.GetDate() ,time:kData.GetTime(), outvar:[closeLine] } 
+                };
+               
+                console.log('[KLineChart::GetAPIIndx_CLOSE_LINE] apiData ', apiData);
+                callback(apiData);
+            }
+
             this.GetSymbolData=function(data, callback)
             {
+                data.PreventDefault=true;
                 var symbol=data.Request.Data.symbol;
                 var period=data.Request.Data.period;
-                if (this.Chart.JSChartContainer.Symbol==symbol && period==this.Chart.JSChartContainer.Period)
+                if (this.Chart.JSChartContainer.Symbol==symbol)
                 {
                     if (ChartData.IsDayPeriod(period, true))
                         HQData.RequestHistoryData(data, callback);
@@ -451,10 +532,51 @@
 						MerginLeft: 2,
                         YMoveOffset:-1,
 					},
-					TooltipText: "指标按钮-左侧",
+					TooltipText: "指标设置",
+                    Data:{ FrameID:frame.Identify, ID:"DrapDownMenu" }
 				};
 
                 frame.CustomToolbar = [button];   //按钮添加
+
+                if (frame.Identify==1)
+                {
+                    var chart=obj.GetExtendChartByClassNameV2("FrameButtomToolbarPaint");
+                    if (!chart)
+                    {
+                        var  aryButton=
+                        [
+                            { Title:"MACD", ID:"F_BTN_01", TooltipText:"MACD:平滑异同平均", Data:{ IndexID:"MACD"}}, 
+                            { Title:"RSI", ID:"F_BTN_02", TooltipText:"RSI:相对强弱指标", Data:{ IndexID:"RSI"} }, 
+                            { Title:"CCI", ID:"F_BTN_03",TooltipText:"CCI:商品路径指标", Data:{ IndexID:"CCI"} }, 
+                            { Title:"ATR", ID:"F_BTN_04", TooltipText:"ATR:说明......", Data:{ IndexID:"ATR"}},
+                            { Title:"VMACD", ID:"F_BTN_05",TooltipText:"VMACD:说明......", Data:{ IndexID:"VMACD"}},
+                            { Title:"BRAR", ID:"F_BTN_06", TooltipText:"BRAR:说明......", Data:{ IndexID:"BRAR"}},
+                            { Title:"更多指标", ID:"F_BTN_07", TooltipText:"更多更多......", SVGButton:{ Symbol:"\ue694", }, Data:{ } },
+                            //{ SVGButton:{ Symbol:"\ue694", }, ID:"F_BTN_08", Data:{ } }
+                        ];
+                    
+                        obj.CreateExtendChart("FrameButtomToolbarPaint", { FrameID:frame.Identify, AryButton:aryButton } );
+                    }
+
+
+                    //frame.HorizontalReserved={ Top:50, Bottom:30 };
+                    
+                }
+            }
+
+            this.OnDeleteFrame=function(event, data, obj)
+            {
+                var selectDom=document.getElementById('window_index');
+                selectDom.options.length=0;
+
+                var lWindowCount=this.Chart.JSChartContainer.Frame.SubFrame.length-1;
+                for(var i=0;i<lWindowCount;++i)
+                {
+                    var name=`附图-${i}`;
+                    if (i==0) name="主图";
+
+                    selectDom.add(new Option(name, i));
+                }
             }
 
             this.OnCreateOverlayFrame=function(event, data, obj)
@@ -471,19 +593,20 @@
 
                 var button =
 				{
-					ID: 8888,
+					ID: 8889,
                     IsLeft:true,
 					Style:  //按钮样式 使用iconfont， 可以放全局的资源配置里面
 					{
 						MoveOnColor: "rgb(255,255,255)",
 						Color: "rgb(156,156,156)",
 						Family: "iconfont",
-						Text: "\ue698",
+						Text: "\ue691",
 						Size: 13 *GetDevicePixelRatio(),
 						MerginLeft: 2,
                         YMoveOffset:-2,
 					},
-					TooltipText: `指标"${data.OverlayFrame.Script.Name}"说明`,
+					TooltipText: `指标设置`,
+                    Data:{ IndexGuid:data.OverlayFrame.Identify, ID:"DrapDownMenu" }
 				};
 
                 frame.CustomToolbar = [button];   //按钮添加
@@ -494,9 +617,45 @@
                
             }
 
+            this.OnSplitXCoordinate=function(event, data, obj)
+            {
+                console.log("[OnSplitXCoordinate] data ", data);
+            }
+
             this.OnCreateCustomYCoordinate=function(event, data ,obj)
             {
                 console.log("[OnCreateCustomYCoordinate] data ", data);
+                if (data.ID==0)
+                {
+                    var info=new CoordinateInfo();
+                    info.Type=5;
+                    info.Value=7;
+                    //info.Message=["40%", "40%"]
+                    info.AreaData={  Value:[6.0, 7.0], BGColor:"rgba(249,210,88,0.5)", Position:[0, 1 ] }
+                    data.Frame.CustomHorizontalInfo.push(info);
+                    
+                    var info=new CoordinateInfo();
+                    info.Type=5;
+                    info.Value=8;
+                    //info.Message=["40%", "40%"]
+                    info.AreaData={  Value:[7.0, 8.0], BGColor:"rgba(93,202,119,0.5)", Position:[0, 1 ] }
+                    data.Frame.CustomHorizontalInfo.push(info);
+
+                    var info=new CoordinateInfo();
+                    info.Type=5;
+                    info.Value=9;
+                    //info.Message=["60%", "60%"]
+                    info.AreaData={  Value:[8.0, 9.0], BGColor:"rgba(43,190,174,0.5)", Position:[0, 1 ] }
+                    data.Frame.CustomHorizontalInfo.push(info);
+
+                    var info=new CoordinateInfo();
+                    info.Type=5;
+                    info.Value=10;
+                    //info.Message=["60%", "60%"]
+                    info.AreaData={  Value:[9.0, 10.0], BGColor:"rgba(125, 212, 251,0.5)", Position:[0, 1 ] }
+                    data.Frame.CustomHorizontalInfo.push(info);
+                    
+                }
             }
 
             this.OnSize=function(option)  //自适应大小调整
@@ -593,6 +752,16 @@
                 this.Chart.ChangeScriptIndex(windowIndex,indexInfo)
             }
 
+            this.AddScriptIndexWindow=function()
+            {
+                var indexInfo=this.GetIndexInfo();
+
+                this.Chart.AddScriptIndexWindow(indexInfo)
+                
+                this.UpdateWindowsSelectDOM();
+
+            }
+
             //叠加指标
             this.ExecuteOverlayIndexScript=function()
             {
@@ -601,6 +770,11 @@
                 var value=document.getElementById("overlay_y").checked;
 
                 var option={ Script:indexInfo.Script, WindowIndex:windowIndex, Name:indexInfo.Name, Args:indexInfo.Args, IsShareY:!value };
+                if (option.IsShareY)
+                {
+                    option.YAxis=indexInfo.YAxis;
+                }
+                
                 this.Chart.AddOverlayIndex(option);
             }
 
@@ -779,20 +953,47 @@
 
             this.ChangeStyle=function(styleName)
             {
+                var buttonColor=[null,null];
                 if (styleName=='black') 
                 {
                     var style=HQChartStyle.GetStyleConfig(STYLE_TYPE_ID.BLACK_ID); //读取风格配置
+
+                    buttonColor[0]="rgb(156,156,156)";
+                    buttonColor[1]="rgb(255,255,255)";
                 }
                 else if (styleName=='white') 
                 {
                     var style=HQChartStyle.GetStyleConfig(STYLE_TYPE_ID.WHITE_ID); //读取风格配置
                     style.BGColor='rgb(255,255,255)';
+
+                    buttonColor[0]="rgb(156,156,156)";
+                    buttonColor[1]="rgb(105,105,105)";
                 }
                 else 
                 {
                     return;
                 }
-                
+
+                var penBorder=style.FrameBorderPen;
+                var frame=this.Chart.JSChartContainer.Frame;
+                for(var i=0, j=0;i<frame.SubFrame.length;++i)
+                {
+                    var subFrame=frame.SubFrame[i];
+                    for(j=0;j<subFrame.Frame.CustomToolbar.length;++j)
+                    {
+                        var item=subFrame.Frame.CustomToolbar[j];
+                        if (item.ID=="8888" || item.ID=="8889")
+                        {
+                            item.Style.MoveOnColor=buttonColor[1];
+                            item.Style.Color=buttonColor[0];
+                        }
+                    }
+
+                    var frameItem=subFrame.Frame;
+                    frameItem.YLineExtend=[{ Width:5, Color:penBorder}, { Width:5, Color:penBorder} ];
+                    frameItem.XLineExtend=[{ Mode:1, Color:penBorder }];
+                }
+
                 style.ToolbarButtonStyle=1;
                 JSChart.SetStyle(style);
                 this.DivKLine.style.backgroundColor=style.BGColor;   //修改div背景色
@@ -803,6 +1004,357 @@
             this.OnTitleDraw=function(event, data, obj)
             {
                 console.log("[KLineChart::OnTitleDraw] data=", data);
+            }
+
+            this.OnClickExtendChartButton=function(event, data, obj)
+            {
+                console.log("[KLineChart::OnClickExtendChartButton] data=", data);
+
+                if (!data.Info) return;
+
+                if (this.OnClickIndexButton(data.Info, data.e)) 
+                {
+                    data.PreventDefault=true;
+                }
+            }
+
+
+            this.OnClickIndexButton=function(btnInfo, e)
+            {
+                if (btnInfo.Chart.ClassName!="FrameButtomToolbarPaint") return false;
+
+                var chart=btnInfo.Chart;
+                var data=btnInfo.Data;
+                if (!data.Data) return;
+
+                var windowIndex=btnInfo.FrameID;
+                if (btnInfo.ButtonType==0 && data.Data.IndexID)
+                {
+                    var indexID=data.Data.IndexID;
+                    chart.SetSelectedID(data.ID);
+                    this.Chart.ChangeIndex(windowIndex, indexID);
+                    return;
+                }
+                
+                if (btnInfo.ID=="F_BTN_07")
+                {
+                    var tabInfo={ID:"F_BTN_07", Chart:chart };
+                    var menuData=
+                    { 
+                        Menu:
+                        [ 
+                            { Name:"ACD", ID:"POP_MENU_1", Data:{ IndexID:"ACD", WindowIndex:btnInfo.FrameID, TabInfo:tabInfo } },  
+                            { Name:"AMV", ID:"POP_MENU_2", Data:{ IndexID:"AMV", WindowIndex:btnInfo.FrameID, TabInfo:tabInfo } },  
+                            { Name:"BIAS", ID:"POP_MENU_3", Data:{ IndexID:"BIAS", WindowIndex:btnInfo.FrameID, TabInfo:tabInfo } },
+                            { 
+                                Name:"其他指标", 
+                                SubMenu:
+                                [ 
+                                    { Name:"WAD", Data:{ IndexID:"WAD", WindowIndex:btnInfo.FrameID, TabInfo:tabInfo }}, 
+                                    { Name:"MASS", Data:{ IndexID:"MASS", WindowIndex:btnInfo.FrameID, TabInfo:tabInfo }}
+                                ]
+                            }
+                        ],
+
+                        Position:JSPopMenu.POSITION_ID.TAB_MENU_ID,
+
+                        ClickCallback:(data)=>{ this.OnClickIndexMenu(data); }
+                    };
+
+                    this.Chart.PopupMenuByTab(menuData, btnInfo.RectCell);
+
+                    if(e.preventDefault) e.preventDefault();
+                    if(e.stopPropagation) e.stopPropagation();
+                }
+                
+
+                return true;
+            }
+
+            this.OnClickIndexMenu=function(menuData)
+            {
+                if (!menuData.Data) return;
+                var data=menuData.Data;
+                var windowIndex=data.WindowIndex;
+                var indexID=data.IndexID;
+                if (data.TabInfo)
+                {
+                    var chart=data.TabInfo.Chart;
+                    for(var i=0;i<chart.AryButton.length;++i)
+                    {
+                        var item=chart.AryButton[i];
+                        if (item.ID==data.TabInfo.ID)
+                        {
+                            item.Data={ IndexID:indexID };
+                            item.Title=menuData.Name;
+                            item.TooltipText=`指标${item.Title}说明: xxxxxx`;
+                            break;
+                        }
+                    }
+                }
+
+                this.Chart.ChangeIndex(windowIndex, indexID);
+            }
+
+            this.OnChangeIndex=function(event, data, obj)
+            {
+                console.log("[KLineChart::OnChangeIndex] data=", data);
+
+                var aryChart=obj.GetExtendChartByClassNameV2("FrameButtomToolbarPaint");
+                if (!IFrameSplitOperator.IsNonEmptyArray(aryChart)) return;
+                
+                var windowIndex=data.WindowIndex;
+                var indexID=data.IndexInfo.ID;
+                for(var i=0;i<aryChart.length;++i)  //工具栏联动
+                {
+                    var item=aryChart[i];
+                    var chart=item.Chart;
+                    if (chart.FrameID==windowIndex)
+                    {
+                        var finder=null;
+                        for(var j=0;j<chart.AryButton.length;++j)
+                        {
+                            var btnItem=chart.AryButton[j];
+                            if (btnItem.Data && btnItem.Data.IndexID==indexID)
+                            {
+                                finder=btnItem;
+                                break;
+                            }
+                        }
+
+                        if (finder) chart.SetSelectedID(finder.ID);
+                        else chart.SetSelectedID(null);
+                        
+                        return;
+                    }
+                }
+            }
+
+            this.OnClickTitleButton=function(event, data, obj)
+            {
+                console.log("[KLineChart::OnClickTitleButton] data=", data);
+                
+                if (!data.Info || !data.Info.Data) return;
+                var rtButton=data.Info.Rect;
+                var e=data.e;
+                if (data.Info.ID==8889)
+                {
+                    var menuData=
+                    { 
+                        Menu:
+                        [ 
+                            this.Chart.JSChartContainer.GetShowOverlayIndexMenuData(data.Info.Data.IndexGuid),
+                            this.Chart.JSChartContainer.GetShowOverlayIndexYAxisMenuData(data.Info.Data.IndexGuid),
+                            this.Chart.JSChartContainer.GetOverlayIndexShareYMenuData(data.Info.Data.IndexGuid),
+                            { Name:JSPopMenu.SEPARATOR_LINE_NAME },
+                            { Name:"删除指标",  Data:{ ID: JSCHART_MENU_ID.CMD_DELETE_OVERLAY_INDEX_ID, Args:[data.Info.Data.IndexGuid] } },
+                        ],
+
+                        Position:JSPopMenu.POSITION_ID.TAB_MENU_ID,
+
+                        ClickCallback:(data)=>{ this.OnClickIndexDrapdownMenu(data); }
+                    };
+                }
+                else
+                {
+                    var menuItem=this.Chart.JSChartContainer.GetShowIndexMenuData(data.Info.FrameID);
+                    var menuData=
+                    { 
+                        Menu:
+                        [ 
+                            menuItem,
+                            { Name:"设置2", ID:"INDEX_DRAPDOWN_MENU_2", Data:{ WindowIndex:data.Info.FrameID } },  
+                        ],
+
+                        Position:JSPopMenu.POSITION_ID.TAB_MENU_ID,
+
+                        ClickCallback:(data)=>{ this.OnClickIndexDrapdownMenu(data); }
+                    };
+                }
+               
+
+                this.Chart.PopupMenuByDrapdown(menuData, rtButton);
+
+                if(e.preventDefault) e.preventDefault();
+                if(e.stopPropagation) e.stopPropagation();
+            }
+
+            this.OnClickIndexDrapdownMenu=function(menuData)
+            {
+                if (menuData.Data.ID==JSCHART_MENU_ID.CMD_SHOW_INDEX_ID || menuData.Data.ID==JSCHART_MENU_ID.CMD_SHOW_OVERLAY_INDEX_ID || 
+                    menuData.Data.ID==JSCHART_MENU_ID.CMD_DELETE_OVERLAY_INDEX_ID || menuData.Data.ID==JSCHART_MENU_ID.CMD_SHOW_OVERLAY_Y_AXIS_ID ||
+                    menuData.Data.ID==JSCHART_MENU_ID.CMD_ENABLE_OVERLAY_SHARE_Y_ID)
+                {
+                    this.Chart.JSChartContainer.ExecuteMenuCommand(menuData.Data.ID, menuData.Data.Args);
+                }
+                else
+                {
+                    console.log("[KLineChart::OnClickIndexDrapdownMenu] menuData=", menuData);
+
+                    var text=`指标下拉菜单\r\n窗口:${menuData.Data.WindowIndex}\r\n菜单ID:${menuData.ID}`;
+                    alert(text);
+                }
+                
+            }
+
+            this.ColorCount=0;
+            this.ClickCrossCursor=function(event, data, obj)
+            {
+                console.log('[KLineChart::ClickCrossCursor] event, data', event , data); //打印信息
+
+                var button=data.Button;
+                var rtButton=button.Rect;
+                var yValue=button.Data.YValue;
+                var windowIndex=button.Data.FrameID;
+                var e=data.e;
+
+                if (windowIndex==0)
+                {
+                    var menuData=
+                    { 
+                        Menu:
+                        [ 
+                            { Name:`买入 @ ${yValue.toFixed(2)}`,  Data:{ ID: "MENU_BUY_ID",  Args:[yValue] } },
+                            { Name:`卖出 @ ${yValue.toFixed(2)}`,  Data:{ ID: "MENU_SELL_ID", Args:[yValue] } },
+                            { Name:JSPopMenu.SEPARATOR_LINE_NAME },
+                            { Name:`画线 @ ${yValue.toFixed(2)}`,  Data:{ ID: "MENU_DRAW_LINE_ID", Args:[yValue, windowIndex] } },
+                        ],
+
+                        Position:JSPopMenu.POSITION_ID.DROPDOWN_RIGHT_MENU_ID,
+
+                        ClickCallback:(data)=>{ this.OnClickCrossCursorMenu(data); }
+                    };
+                }
+                else
+                { 
+                    var menuData=
+                    { 
+                        Menu:
+                        [ 
+                            { Name:`画线 @ ${yValue.toFixed(5)}`,  Data:{ ID: "MENU_DRAW_LINE_ID", Args:[yValue, windowIndex] } },
+                        ],
+
+                        Position:JSPopMenu.POSITION_ID.DROPDOWN_RIGHT_MENU_ID,
+
+                        ClickCallback:(data)=>{ this.OnClickCrossCursorMenu(data); }
+                    };
+
+                }
+                
+
+                this.Chart.PopupMenuByDrapdown(menuData, rtButton);
+
+                if(e.preventDefault) e.preventDefault();
+                if(e.stopPropagation) e.stopPropagation();
+            }
+
+            this.ColorCount=0;
+            this.OnClickCrossCursorMenu=function(data)
+            {
+                console.log("[KLineChart::OnClickCrossCursorMenu] data=", data);
+
+                if (data.Data.ID=="MENU_DRAW_LINE_ID")
+                {
+                    var ARRAY_COLOR=['rgb(255,140,0)', "rgb(153,50,204)", "rgb(0, 139, 0)"];
+                    var lineColor=ARRAY_COLOR[this.ColorCount%ARRAY_COLOR.length];
+                    ++this.ColorCount;
+
+                    var yValue=data.Data.Args[0];
+                    var frameID=data.Data.Args[1];
+                    var drawPictrue=
+                    { 
+                        ClassName:"ChartDrawHLine",                   
+                        Value:[ {XValue:0, YValue:yValue} ],    
+                        FrameID:frameID,
+                        RightSpaceWidth:2,	 
+                        Button:{ SettingIcon:null },     
+                        ButtonBGColor:"rgb(100,0,0)",    
+                        LineColor:lineColor
+                    };
+
+                    this.Chart.AddChartDrawPicture(drawPictrue);
+                    this.Chart.Draw();
+                }
+                else if (data.Data.ID=="MENU_BUY_ID")
+                {
+                    var yValue=data.Data.Args[0];
+                    var text=`买入价:${yValue.toFixed(2)}`;
+                    alert(text);
+                }
+                else if (data.Data.ID=="MENU_SELL_ID")
+                {
+                    var yValue=data.Data.Args[0];
+                    var text=`卖出价:${yValue.toFixed(2)}`;
+                    alert(text);
+                }
+            }
+
+            this.OnCreateRightMenu=function(event, data, obj)
+            {
+                console.log("[KLineChart::OnCreateRightMenu] data=", data);
+
+                var item={ Name:"自定义菜单项", Data:{ ID:"CUSTOM_MENU_1_ID", Args:[1] } };
+                data.MenuData.Menu.push( { Name:JSPopMenu.SEPARATOR_LINE_NAME });
+                data.MenuData.Menu.push(item);
+                var frameID=data.FrameID;
+                for(var i=0;i<data.MenuData.Menu.length;++i)
+                {
+                    var item=data.MenuData.Menu[i];
+                    if (item.Name=="其他设置")
+                    {
+                        for(var j=0;j<item.SubMenu.length;++j)
+                        {
+                            var subItem=item.SubMenu[j];
+                            if (subItem.Name=="鼠标形状")
+                            {
+                                var customCursor="url('../jscommon/umychart.resource/Cursor/normal.cur'), default";
+                                var newItem={ Name:"自定义图片", Data:{ ID:JSCHART_MENU_ID.CMD_CHANGE_DEFAULTCURSOR_ID, Args:[customCursor]}, Checked:obj.DefaultCursor==customCursor };
+                                subItem.SubMenu.push(newItem);
+                                break;
+                            }
+                        }
+                    }
+                    else if (item.Name=="指标切换")
+                    {
+                        item.SubMenu.push({ Name:JSPopMenu.SEPARATOR_LINE_NAME });
+                        var indexInfo={ API: { ID:"CLOSE_LINE", Name:'收盘线(后台指标)',Args:null, Url:'local'} };
+                        var newItem={ Name:indexInfo.API.Name, Data:{ ID: JSCHART_MENU_ID.CMD_CHANGE_API_INDEX_ID, Args:[frameID, indexInfo]}};
+                        item.SubMenu.push(newItem);
+
+                        var indexInfo={ Name:"高低均价(自定义脚本)", ID:"HIGH_LOW_AV", Script:"均价:(H+L)/2;高:H;低:L;" };
+                        var newItem={ Name:indexInfo.Name, Data:{ ID: JSCHART_MENU_ID.CMD_CHANGE_SCRIPT_INDEX_ID, Args:[frameID, indexInfo]}};
+                        item.SubMenu.push(newItem);
+                    }
+                }
+                
+            }
+
+            this.OnMenuCommand=function(event, data, obj)
+            {
+                console.log("[KLineChart::OnMenuCommand] data=", data);
+
+                if (data.CommandID=="CUSTOM_MENU_1_ID")
+                {
+                    data.PreventDefault=true;
+
+                    var text="外部自定义菜单按钮";
+                    alert(text);
+                }
+            }
+
+            this.UpdateWindowsSelectDOM=function()
+            {
+                var selectDom=document.getElementById('window_index');
+                selectDom.options.length=0;
+
+                var lWindowCount=this.Chart.JSChartContainer.Frame.SubFrame.length;
+                for(var i=0;i<lWindowCount;++i)
+                {
+                    var name=`附图-${i}`;
+                    if (i==0) name="主图";
+
+                    selectDom.add(new Option(name, i));
+                }
             }
         
         }
@@ -847,6 +1399,8 @@
 
             //执行指标
             $("#index_run").click(function() { klineControl.ExecuteIndexScript(); } );
+            $("#add_index_window").click(function() { klineControl.AddScriptIndexWindow(); } );
+            
             $("#index_check").click(function() { klineControl.CheckIndexScript(); } );
             $("#index_save").click(function() { klineControl.SaveLocalIndex(); } );
             $("#overlayindex_run").click(function(){ klineControl.ExecuteOverlayIndexScript(); })
@@ -855,11 +1409,13 @@
 
             $("#style_black").click(function(){ klineControl.ChangeStyle('black') })
             $("#style_white").click(function(){ klineControl.ChangeStyle('white'); })
-            
-
 
             DeleteLocalIndex=(e, name)=>{ klineControl.DeleteLocalIndex(e, name); }
             SelectLocalIndex=(e, name)=> { klineControl.SelectLocalIndex(e, name); }
+
+
+            JSComplier.AddFunction({ Name:'FUNC_DEMO',   Description:'自定义函数1', IsDownload:false } );
+            JSComplier.AddVariant({ Name:'VAR_DEMO',   Description:'自定义变量1' } );
 
         })
 

@@ -327,6 +327,16 @@ function GetBlackStyle()
             {
                 MoveOnColor:"rgb(255,255,255)",
                 Color:"rgb(156,156,156)"
+            },
+
+            Tooltip:
+            {
+                //Font:12*GetDevicePixelRatio() +"px 微软雅黑",
+                Color:'rgb(204,204,204)',
+                ColorBG:'rgb(32,32,32)',
+                ColorBorder:'rgb(69,69,69)',
+                //BorderRadius:4,
+                //Mergin:{ Left:4, Right:4, Top:2, Bottom:4 },
             }
         },
         
@@ -682,6 +692,19 @@ function GetBlackStyle()
                 AreaColor:"rgba(24,28,42,0.5)",
             },
         },
+
+        FrameButtomToolbar:
+        {
+            BGColor:"rgb(25,25,25)",
+            BorderColor:"rgb(60,60,60)",
+            Button:
+            {
+                Font:{ Family:"微软雅黑" },
+                TitleColor: { Selected:"rgb(255,255,255)", Default:"rgb(140,140,140)", MoveOn:"rgb(255,255,255)" },
+                BGColor: {  Selected:"rgb(234,85,4)", Default:"rgb(25,25,25)", MoveOn:"rgb(59,59,59)" },
+                BorderColor:"rgb(60,60,60)",
+            }
+        }
         
     };
     

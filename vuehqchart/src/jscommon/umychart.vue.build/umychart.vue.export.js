@@ -107,10 +107,14 @@ export default {
         JSCHART_DRAG_ID:JSCHART_DRAG_ID,
         JSCHART_BUTTON_ID:JSCHART_BUTTON_ID,
         JSCHART_DATA_FIELD_ID:JSCHART_DATA_FIELD_ID,
-        JSCHART_WORKER_MESSAGE_ID:JSCHART_WORKER_MESSAGE_ID
+        JSCHART_WORKER_MESSAGE_ID:JSCHART_WORKER_MESSAGE_ID,
+        JSCHART_MENU_ID:JSCHART_MENU_ID
     },
 
 
     HQChartScriptWorker:HQChartScriptWorker,    //计算工作线程
+
+    JSPopMenu:JSPopMenu,    //弹出菜单
+    JSDialogDrawTool:JSDialogDrawTool,  //画图工具对话框
     
 }
