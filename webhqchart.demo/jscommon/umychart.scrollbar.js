@@ -15,26 +15,36 @@ function JSScrollBarChart(divElement)
 {
     this.DivElement=divElement;
     this.JSChartContainer;              //表格控件
+    this.ResizeListener;
 
-     //h5 canvas
-     this.CanvasElement=document.createElement("canvas");
-     this.CanvasElement.className='jsscrollbar-drawing';
-     this.CanvasElement.id=Guid();
-     this.CanvasElement.setAttribute("tabindex",0);
-     if (this.CanvasElement.style) this.CanvasElement.style.outline='none';
-     if(divElement.hasChildNodes())
-     {
-         JSConsole.Chart.Log("[JSScrollBarChart::JSScrollBarChart] divElement hasChildNodes", divElement.childNodes);
-     }
-     divElement.appendChild(this.CanvasElement);
+    //h5 canvas
+    this.CanvasElement=document.createElement("canvas");
+    this.CanvasElement.className='jsscrollbar-drawing';
+    this.CanvasElement.id=Guid();
+    this.CanvasElement.setAttribute("tabindex",0);
+    if (this.CanvasElement.style) this.CanvasElement.style.outline='none';
+    if(divElement.hasChildNodes())
+    {
+        JSConsole.Chart.Log("[JSScrollBarChart::JSScrollBarChart] divElement hasChildNodes", divElement.childNodes);
+    }
+    divElement.appendChild(this.CanvasElement);
 
 
     this.OnSize=function()
     {
         //画布大小通过div获取
-        var height=parseInt(this.DivElement.style.height.replace("px",""));
+        var height=this.DivElement.offsetHeight;
+        var width=this.DivElement.offsetWidth;
+        if (this.DivElement.style.height && this.DivElement.style.width)
+        {
+            if (this.DivElement.style.height.includes("px"))
+                height=parseInt(this.DivElement.style.height.replace("px",""));
+            if (this.DivElement.style.width.includes("px"))
+                width=parseInt(this.DivElement.style.width.replace("px",""));
+        }  
+
         this.CanvasElement.height=height;
-        this.CanvasElement.width=parseInt(this.DivElement.style.width.replace("px",""));
+        this.CanvasElement.width=width;
         this.CanvasElement.style.width=this.CanvasElement.width+'px';
         this.CanvasElement.style.height=this.CanvasElement.height+'px';
 
@@ -56,12 +66,14 @@ function JSScrollBarChart(divElement)
 
         if (!chart) return false;
 
+        this.JSChartContainer=chart;
+        this.DivElement.JSChart=this;   //div中保存一份
+
+        if (option.EnableResize==true) this.CreateResizeListener();
+
         if (option.OnCreatedCallback) option.OnCreatedCallback(chart);
 
         chart.Draw();
-
-        this.JSChartContainer=chart;
-        this.DivElement.JSChart=this;   //div中保存一份
     }
 
     this.CreateJSScrollBarChartContainer=function(option)
@@ -104,6 +116,18 @@ function JSScrollBarChart(divElement)
 
         if (IFrameSplitOperator.IsBool(item.AutoLeft)) chart.AutoMargin.Left=item.AutoLeft;
         if (IFrameSplitOperator.IsBool(item.AutoRight)) chart.AutoMargin.Right=item.AutoRight;
+    }
+
+    this.CreateResizeListener=function()
+    {
+        this.ResizeListener = new ResizeObserver((entries)=>{ this.OnDivResize(entries); });
+        this.ResizeListener.observe(this.DivElement);
+    }
+
+    this.OnDivResize=function(entries)
+    {
+        JSConsole.Chart.Log("[JSScrollBarChart::OnDivResize] entries=", entries);
+        this.OnSize( );
     }
 
     /////////////////////////////////////////////////////////////////////////////
@@ -251,6 +275,11 @@ function JSScrollBarChartContainer(uielement)
         this.IsDestroy=true;
     }
 
+    this.GetHQChart=function()
+    {
+        return this.HQChart;
+    }
+
     //设置事件回调
     //{event:事件id, callback:回调函数}
     this.AddEventCallback=function(object)
@@ -327,6 +356,36 @@ function JSScrollBarChartContainer(uielement)
         //this.UIElement.ontouchstart=(e)=> { this.OnTouchStart(e); } 
         //this.UIElement.ontouchmove=(e)=> {this.OnTouchMove(e); }
         //this.UIElement.ontouchend=(e)=> {this.OnTouchEnd(e); } 
+    }
+
+    //创建一个图形
+    this.CreateChartPaint=function(name)
+    {
+        var chart=g_ChartPaintFactory.Create(name);
+        if (!chart) return null;
+
+        chart.ChartFrame=this.Frame;
+        chart.ChartBorder=this.Frame.ChartBorder;
+        chart.Canvas=this.Canvas;
+        chart.Data=this.Frame.Data;
+        chart.GetEventCallback=(id)=> { return this.GetEventCallback(id); }
+        chart.GetHQChartCallback=()=>{ return this.GetHQChart(); }
+
+        return chart;
+    }
+
+    this.GetChartPaintByClassName=function(name)
+    {
+        for(var i=0; i<this.ChartPaint.length; ++i)
+        {
+            var item=this.ChartPaint[i];
+            if (item.ClassName==name)
+            {
+                return { Chart:item, Index:i };
+            }
+        }
+
+        return null;
     }
 
     this.Draw=function()
@@ -431,7 +490,28 @@ function JSScrollBarChartContainer(uielement)
         if (this.SliderChart) 
         {
             var clickData=this.SliderChart.PtInChart(x,y);
-            if (!clickData) return;
+            if (!clickData) 
+            {
+                if (!this.Frame.PtInClient(x,y)) return;
+
+                //滚动块直接移动到鼠标点击的位置
+                var index=this.Frame.GetXData(x);
+                index=Math.round(index);
+                var pageRange=this.GetPageRange();
+                var showCount=pageRange.ShowCount;
+                var start=index-parseInt(showCount/2);
+                if (start<0) start=0;
+                var end=start+showCount;
+                if (end>=this.Frame.XPointCount) 
+                {
+                    end=this.Frame.XPointCount-1;
+                    start=end-showCount;
+                }
+
+                var drag={ UpdateData:{  StartIndex:start, EndIndex:end, Type:3 } };
+                this.DragUpdate(drag);
+                return;
+            }
 
             this.DragSlider={ Click:{ X:e.clientX, Y:e.clientY }, LastMove:{X:e.clientX, Y:e.clientY}, Data:clickData };
             this.DragSlider.DrawCount=0;    //重绘次数
@@ -440,6 +520,7 @@ function JSScrollBarChartContainer(uielement)
         document.onmousemove=(e)=>{ this.DocOnMouseMove(e); }
         document.onmouseup=(e)=> { this.DocOnMouseUp(e); }
     }
+
 
     //去掉右键菜单
     this.UIOnContextMenu=function(e)
@@ -462,11 +543,11 @@ function JSScrollBarChartContainer(uielement)
             switch(item.Data.Type)
             {
                 case 0:
-                    mouseStatus={ Cursor:"move", Name:"SliderChart"};
+                    mouseStatus={ Cursor:"grab", Name:"SliderChart"};
                     break;
                 case 1:
                 case 2:
-                    mouseStatus={ Cursor:"ew-resize", Name:"SliderChart"};
+                    mouseStatus={ Cursor:"col-resize", Name:"SliderChart"};
                     break;
             }
         }
@@ -536,6 +617,10 @@ function JSScrollBarChartContainer(uielement)
                 {
                     xStart=pageRange.First.XStart;
                 }
+                else if (xStart>=right)
+                {
+                    xStart=pageRange.Last.XEnd;
+                }
 
                 this.SliderChart.XStart=xStart;
             }
@@ -544,6 +629,10 @@ function JSScrollBarChartContainer(uielement)
                 if (xEnd>=right) 
                 {
                     xEnd=pageRange.Last.XEnd;
+                }
+                else if (xEnd<=left)
+                {
+                    xEnd=pageRange.First.XStart;
                 }
 
                 this.SliderChart.XEnd=xEnd;
@@ -671,10 +760,13 @@ function JSScrollBarChartContainer(uielement)
     //移动滑块
     this.UpdateXDataOffset=function(obj)
     {
+        if (!obj) return;
+
+        var type=obj.Type;
         if (obj.Type==0)
         {
             var start=this.Frame.GetXData(obj.XStart);
-            start=parseInt(start);
+            start=parseInt(start+0.5);  //四舍五入
             var moveSetp=start-this.XOffsetData.Start;
 
             this.XOffsetData.Start=start;
@@ -692,11 +784,17 @@ function JSScrollBarChartContainer(uielement)
             end=parseInt(end);
             this.XOffsetData.End=end;
         }
+        else if (obj.Type==3)
+        {
+            this.XOffsetData.End=obj.EndIndex;
+            this.XOffsetData.Start=obj.StartIndex;
+            type=0;
+        }
 
         var endItem=this.SourceData.Data[this.XOffsetData.End];
         var startItem=this.SourceData.Data[this.XOffsetData.Start];
 
-        var sendData={ Type:obj.Type, Count:this.XOffsetData.Count };
+        var sendData={ Type:type, Count:this.XOffsetData.Count };
         if (this.XOffsetData.End>this.XOffsetData.Start)
         {
             sendData.Start={ Index:this.XOffsetData.Start, Item:startItem};
@@ -1071,6 +1169,18 @@ function JSScrollBarFrame()
             }
         }
     }
+
+    this.PtInClient=function(x,y)
+    {
+        var left=ToFixedPoint(this.ChartBorder.GetLeft());
+        var top=ToFixedPoint(this.ChartBorder.GetTop());
+        var right=ToFixedPoint(this.ChartBorder.GetRight());
+        var bottom=ToFixedPoint(this.ChartBorder.GetBottom());
+
+        if (x>=left && x<=right && y>=top && y<=bottom) return true;
+
+        return false;
+    }
 }
 
 
@@ -1089,8 +1199,9 @@ function SliderChart()
     this.Color=g_JSChartResource.ScrollBar.Slider.BarAreaColor;
 
     this.BarColor=g_JSChartResource.ScrollBar.Slider.BarColor;
-    this.BarWidth=10;
-    this.BarPadding=10;  //上下留白
+    this.BarWidth=g_JSChartResource.ScrollBar.Slider.BarWidth;
+    this.BarPadding=g_JSChartResource.ScrollBar.Slider.BarPadding;  //上下留白
+    this.MinCenterWidth=g_JSChartResource.ScrollBar.Slider.MinCenterWidth;
 
     this.DateFont=g_JSChartResource.ScrollBar.Slider.DateFont;
     this.DateColor=g_JSChartResource.ScrollBar.Slider.DateColor;
@@ -1150,6 +1261,12 @@ function SliderChart()
         var rtBar={ Left:Math.min(xStart,xEnd), Top:top, Width:Math.abs(xEnd-xStart), Height: bottom-top};
         rtBar.Right=rtBar.Left+rtBar.Width;
         rtBar.Bottom=rtBar.Top+rtBar.Height;
+        if (rtBar.Width<this.MinCenterWidth)
+        {
+            rtBar.Left-=(this.MinCenterWidth-rtBar.Width)/2;
+            rtBar.Width=this.MinCenterWidth;
+            rtBar.Right=rtBar.Left+rtBar.Width;
+        }
         this.Canvas.fillRect(rtBar.Left, rtBar.Top, rtBar.Width, rtBar.Height);
         this.AryRect.push({ Rect:rtBar, Type:0});
 
@@ -1197,6 +1314,10 @@ function SliderChart()
         if (ChartData.IsMilliSecondPeriod(this.Data.Period))
         {
             var time=parseInt(data.Data.Time/1000);
+            text=IFrameSplitOperator.FormatTimeString(time,"HH:MM:SS");
+        }
+        else if (ChartData.IsSecondPeriod(this.Data.Period))
+        {
             text=IFrameSplitOperator.FormatTimeString(time,"HH:MM:SS");
         }
         else if (ChartData.IsMinutePeriod(this.Data.Period, true)) 
@@ -1247,6 +1368,8 @@ function SliderChart()
         return null;
     }
 }
+
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 // 滚动条K线背景色
